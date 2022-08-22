@@ -1,0 +1,20 @@
+{
+    
+    "name": "SimplePojoObjectAvro",
+    "type": "record",
+    "namespace": "com.davidosantos.kafka.training.kafkatraining",
+    "fields": [
+      {
+        "name": "name",
+        "type": "string"
+      },
+      {
+        "name": "age",
+        "type": "int"
+      },
+      {
+        "name": "birthDate",
+        "type": ["null" , {"type": "int", "logicalType": "date"}]
+      }
+    ]
+  }

@@ -36,5 +36,14 @@ public class SimplePojoObject {
      this.birthDate = birthDate;
     }
 
+    @Override
+    public String toString() {
+        return "{" +
+            " name='" + getName() + "'" +
+            ", age='" + getAge() + "'" +
+            ", birthDate='" + getBirthDate() + "'" +
+            "}";
+    }
+
 
 }
