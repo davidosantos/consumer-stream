@@ -31,6 +31,7 @@ import org.apache.kafka.streams.Topology;
 import org.apache.kafka.streams.kstream.Branched;
 import org.apache.kafka.streams.kstream.BranchedKStream;
 import org.apache.kafka.streams.kstream.Consumed;
+import org.apache.kafka.streams.kstream.Grouped;
 import org.apache.kafka.streams.kstream.JoinWindows;
 import org.apache.kafka.streams.kstream.Joined;
 import org.apache.kafka.streams.kstream.KStream;
@@ -478,6 +479,46 @@ public class KafkaTrainingApplication {
 		// ---------------------- 13 -----------------------
 		// using Join
 		// https://www.confluent.io/blog/crossing-streams-joins-apache-kafka/
+		// StreamsBuilder builder = new StreamsBuilder();
+		// KStream<String, SimplePojoObject> lines = builder.stream("stream-topic-custom-serdes",
+		// 		Consumed.with(Serdes.String(), new CustomSerdes()));
+
+		// Map<String, KStream<String, SimplePojoObject>> branchs = lines.split(Named.as("branch-")) // if not set a name
+		// 		// fakfka will put
+		// 		// default name
+		// 		.branch((key, value) -> value.getAge() >= 34, Branched.as("greaterThan34"))
+		// 		.branch((key, value) -> value.getAge() < 34, Branched.as("lessThan34"))
+		// 		.noDefaultBranch();
+		// // change the key
+		// KStream<String, SimplePojoObject> kStreamGreaterThan24 = branchs.get("branch-greaterThan34")
+		// 		.selectKey((k, v) -> k);
+		// KStream<String, SimplePojoObject> kStreamLessThan24 = branchs.get("branch-lessThan34")
+		// 		.selectKey((k, v) -> k);
+
+		// // kStreamGreaterThan24
+		// // .print(Printed.<String,SimplePojoObject>toSysOut().withLabel("kStreamGreaterThan24"));
+		// // kStreamLessThan24
+		// // .print(Printed.<String,SimplePojoObject>toSysOut().withLabel("kStreamLessThan24"));
+
+		// // //create a joiner
+		// // ValueJoiner<SimplePojoObject, SimplePojoObject, JoinedObjects> joiner =
+		// // (left, right) ->
+		// // new JoinedObjects(left, right);
+
+		// kStreamGreaterThan24.join(kStreamLessThan24,
+		// 		(left, right) -> new JoinedObjects(left, right), // lambda Joiner, same as create above, but inline
+		// 		JoinWindows.of(Duration.ofSeconds(30)),
+		// 		StreamJoined.with(Serdes.String(), new CustomSerdes(), new CustomSerdes()))
+		// 		.peek((k, v) -> logger.info("key: " + k))
+		// 		.print(Printed.<String, JoinedObjects>toSysOut().withLabel("Found a Join"));
+
+		// consumer = new KafkaStreams(builder.build(), props);
+		// consumer.start();
+
+
+		// ---------------------- 14 -----------------------
+		// using Join, and Group By to count
+		// https://www.confluent.io/blog/crossing-streams-joins-apache-kafka/
 		StreamsBuilder builder = new StreamsBuilder();
 		KStream<String, SimplePojoObject> lines = builder.stream("stream-topic-custom-serdes",
 				Consumed.with(Serdes.String(), new CustomSerdes()));
@@ -491,24 +532,18 @@ public class KafkaTrainingApplication {
 		// change the key
 		KStream<String, SimplePojoObject> kStreamGreaterThan24 = branchs.get("branch-greaterThan34")
 				.selectKey((k, v) -> k);
-		KStream<String, SimplePojoObject> kStreamLessThan24 = branchs.get("branch-lessThan34").selectKey((k, v) -> k);
+		KStream<String, SimplePojoObject> kStreamLessThan24 = branchs.get("branch-lessThan34")
+				.selectKey((k, v) -> k);
 
-		// kStreamGreaterThan24
-		// .print(Printed.<String,SimplePojoObject>toSysOut().withLabel("kStreamGreaterThan24"));
-		// kStreamLessThan24
-		// .print(Printed.<String,SimplePojoObject>toSysOut().withLabel("kStreamLessThan24"));
-
-		// //create a joiner
-		// ValueJoiner<SimplePojoObject, SimplePojoObject, JoinedObjects> joiner =
-		// (left, right) ->
-		// new JoinedObjects(left, right);
-
+				
 		kStreamGreaterThan24.join(kStreamLessThan24,
 				(left, right) -> new JoinedObjects(left, right), // lambda Joiner, same as create above, but inline
 				JoinWindows.of(Duration.ofSeconds(30)),
 				StreamJoined.with(Serdes.String(), new CustomSerdes(), new CustomSerdes()))
-				.peek((k, v) -> logger.info("key: " + k))
-				.print(Printed.<String, JoinedObjects>toSysOut().withLabel("Found a Join"));
+				//with GroupBy we can select a new key for the data, or we can use GroupByKey to select the key thats ships with the original data.
+				.groupBy((k,v) -> k,Grouped.with(Serdes.String(), new CustomSerdesForJoinedObjects())) //A complex type must implement a new Serdes
+				.count().toStream() //count and convert back to stream
+				.print(Printed.<String, Long>toSysOut().withLabel("Joins"));
 
 		consumer = new KafkaStreams(builder.build(), props);
 		consumer.start();
