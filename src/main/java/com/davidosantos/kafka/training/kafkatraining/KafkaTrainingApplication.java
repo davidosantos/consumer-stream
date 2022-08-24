@@ -32,6 +32,7 @@ import org.apache.kafka.streams.kstream.Branched;
 import org.apache.kafka.streams.kstream.BranchedKStream;
 import org.apache.kafka.streams.kstream.Consumed;
 import org.apache.kafka.streams.kstream.Grouped;
+import org.apache.kafka.streams.kstream.Initializer;
 import org.apache.kafka.streams.kstream.JoinWindows;
 import org.apache.kafka.streams.kstream.Joined;
 import org.apache.kafka.streams.kstream.KStream;
@@ -68,7 +69,7 @@ public class KafkaTrainingApplication {
 	void doingSetups() {
 		logger.info("Doing setups..");
 		this.props.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, "kafka-1:19092,kafka-2:29092,kafka-3:39092");
-		this.props.put(StreamsConfig.APPLICATION_ID_CONFIG, "stream-consumer-4");
+		this.props.put(StreamsConfig.APPLICATION_ID_CONFIG, "stream-consumer-6");
 		this.props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
 		this.props.put(StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG, Serdes.String().getClass());
 		this.props.put(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, Serdes.String().getClass());
@@ -480,25 +481,31 @@ public class KafkaTrainingApplication {
 		// using Join
 		// https://www.confluent.io/blog/crossing-streams-joins-apache-kafka/
 		// StreamsBuilder builder = new StreamsBuilder();
-		// KStream<String, SimplePojoObject> lines = builder.stream("stream-topic-custom-serdes",
-		// 		Consumed.with(Serdes.String(), new CustomSerdes()));
+		// KStream<String, SimplePojoObject> lines =
+		// builder.stream("stream-topic-custom-serdes",
+		// Consumed.with(Serdes.String(), new CustomSerdes()));
 
-		// Map<String, KStream<String, SimplePojoObject>> branchs = lines.split(Named.as("branch-")) // if not set a name
-		// 		// fakfka will put
-		// 		// default name
-		// 		.branch((key, value) -> value.getAge() >= 34, Branched.as("greaterThan34"))
-		// 		.branch((key, value) -> value.getAge() < 34, Branched.as("lessThan34"))
-		// 		.noDefaultBranch();
+		// Map<String, KStream<String, SimplePojoObject>> branchs =
+		// lines.split(Named.as("branch-")) // if not set a name
+		// // fakfka will put
+		// // default name
+		// .branch((key, value) -> value.getAge() >= 34, Branched.as("greaterThan34"))
+		// .branch((key, value) -> value.getAge() < 34, Branched.as("lessThan34"))
+		// .noDefaultBranch();
 		// // change the key
-		// KStream<String, SimplePojoObject> kStreamGreaterThan24 = branchs.get("branch-greaterThan34")
-		// 		.selectKey((k, v) -> k);
-		// KStream<String, SimplePojoObject> kStreamLessThan24 = branchs.get("branch-lessThan34")
-		// 		.selectKey((k, v) -> k);
+		// KStream<String, SimplePojoObject> kStreamGreaterThan24 =
+		// branchs.get("branch-greaterThan34")
+		// .selectKey((k, v) -> k);
+		// KStream<String, SimplePojoObject> kStreamLessThan24 =
+		// branchs.get("branch-lessThan34")
+		// .selectKey((k, v) -> k);
 
 		// // kStreamGreaterThan24
-		// // .print(Printed.<String,SimplePojoObject>toSysOut().withLabel("kStreamGreaterThan24"));
+		// //
+		// .print(Printed.<String,SimplePojoObject>toSysOut().withLabel("kStreamGreaterThan24"));
 		// // kStreamLessThan24
-		// // .print(Printed.<String,SimplePojoObject>toSysOut().withLabel("kStreamLessThan24"));
+		// //
+		// .print(Printed.<String,SimplePojoObject>toSysOut().withLabel("kStreamLessThan24"));
 
 		// // //create a joiner
 		// // ValueJoiner<SimplePojoObject, SimplePojoObject, JoinedObjects> joiner =
@@ -506,18 +513,98 @@ public class KafkaTrainingApplication {
 		// // new JoinedObjects(left, right);
 
 		// kStreamGreaterThan24.join(kStreamLessThan24,
-		// 		(left, right) -> new JoinedObjects(left, right), // lambda Joiner, same as create above, but inline
-		// 		JoinWindows.of(Duration.ofSeconds(30)),
-		// 		StreamJoined.with(Serdes.String(), new CustomSerdes(), new CustomSerdes()))
-		// 		.peek((k, v) -> logger.info("key: " + k))
-		// 		.print(Printed.<String, JoinedObjects>toSysOut().withLabel("Found a Join"));
+		// (left, right) -> new JoinedObjects(left, right), // lambda Joiner, same as
+		// create above, but inline
+		// JoinWindows.of(Duration.ofSeconds(30)),
+		// StreamJoined.with(Serdes.String(), new CustomSerdes(), new CustomSerdes()))
+		// .peek((k, v) -> logger.info("key: " + k))
+		// .print(Printed.<String, JoinedObjects>toSysOut().withLabel("Found a Join"));
 
 		// consumer = new KafkaStreams(builder.build(), props);
 		// consumer.start();
 
-
 		// ---------------------- 14 -----------------------
 		// using Join, and Group By to count
+		// https://www.confluent.io/blog/crossing-streams-joins-apache-kafka/
+		// StreamsBuilder builder = new StreamsBuilder();
+		// KStream<String, SimplePojoObject> lines =
+		// builder.stream("stream-topic-custom-serdes",
+		// Consumed.with(Serdes.String(), new CustomSerdes()));
+
+		// Map<String, KStream<String, SimplePojoObject>> branchs =
+		// lines.split(Named.as("branch-")) // if not set a name
+		// // fakfka will put
+		// // default name
+		// .branch((key, value) -> value.getAge() >= 34, Branched.as("greaterThan34"))
+		// .branch((key, value) -> value.getAge() < 34, Branched.as("lessThan34"))
+		// .noDefaultBranch();
+		// // change the key
+		// KStream<String, SimplePojoObject> kStreamGreaterThan24 =
+		// branchs.get("branch-greaterThan34")
+		// .selectKey((k, v) -> k);
+		// KStream<String, SimplePojoObject> kStreamLessThan24 =
+		// branchs.get("branch-lessThan34")
+		// .selectKey((k, v) -> k);
+
+		// kStreamGreaterThan24.join(kStreamLessThan24,
+		// (left, right) -> new JoinedObjects(left, right), // lambda Joiner, same as
+		// create above, but inline
+		// JoinWindows.of(Duration.ofSeconds(30)),
+		// StreamJoined.with(Serdes.String(), new CustomSerdes(), new CustomSerdes()))
+		// //with GroupBy we can select a new key for the data, or we can use GroupByKey
+		// to select the key thats ships with the original data.
+		// .groupBy((k,v) -> k,Grouped.with(Serdes.String(), new
+		// CustomSerdesForJoinedObjects())) //A complex type must implement a new Serdes
+		// .count().toStream() //count and convert back to stream
+		// .print(Printed.<String, Long>toSysOut().withLabel("Joins"));
+
+		// consumer = new KafkaStreams(builder.build(), props);
+		// consumer.start();
+
+		// // ---------------------- 15 -----------------------
+		// // using Join, and Group By, aggregate
+		// // https://www.confluent.io/blog/crossing-streams-joins-apache-kafka/
+		// StreamsBuilder builder = new StreamsBuilder();
+		// KStream<String, SimplePojoObject> lines =
+		// builder.stream("stream-topic-custom-serdes",
+		// Consumed.with(Serdes.String(), new CustomSerdes()));
+
+		// Map<String, KStream<String, SimplePojoObject>> branchs =
+		// lines.split(Named.as("branch-")) // if not set a name
+		// // fakfka will put
+		// // default name
+		// .branch((key, value) -> value.getAge() >= 34, Branched.as("greaterThan34"))
+		// .branch((key, value) -> value.getAge() < 34, Branched.as("lessThan34"))
+		// .noDefaultBranch();
+		// // change the key
+		// KStream<String, SimplePojoObject> kStreamGreaterThan24 =
+		// branchs.get("branch-greaterThan34");
+		// KStream<String, SimplePojoObject> kStreamLessThan24 =
+		// branchs.get("branch-lessThan34");
+
+		// kStreamGreaterThan24.join(kStreamLessThan24,
+		// (left, right) -> new JoinedObjects(left, right), // lambda Joiner, same as
+		// create above, but inline
+		// JoinWindows.of(Duration.ofSeconds(30)),
+		// StreamJoined.with(Serdes.String(), new CustomSerdes(), new CustomSerdes()))
+		// // with GroupBy we can select a new key for the data, or we can use
+		// GroupByKey
+		// // to select the key thats ships with the original data.
+		// .groupBy((k, v) -> k, Grouped.with(Serdes.String(), new
+		// CustomSerdesForJoinedObjects()))
+		// .aggregate(
+		// () -> 0.0,
+		// (key, joinedObj, newValue) -> joinedObj.key1.getAge() + newValue,
+		// Materialized.with(Serdes.String(),Serdes.Double()))
+		// .toStream()
+		// .print(Printed.<String, Double>toSysOut().withLabel("Joins"));
+
+		// consumer = new KafkaStreams(builder.build(), props);
+		// consumer.start();
+
+		// ---------------------- 16 -----------------------
+		// using Join, and Group By, aggregate with class implementing
+		// initializerForAggregate
 		// https://www.confluent.io/blog/crossing-streams-joins-apache-kafka/
 		StreamsBuilder builder = new StreamsBuilder();
 		KStream<String, SimplePojoObject> lines = builder.stream("stream-topic-custom-serdes",
@@ -530,23 +617,27 @@ public class KafkaTrainingApplication {
 				.branch((key, value) -> value.getAge() < 34, Branched.as("lessThan34"))
 				.noDefaultBranch();
 		// change the key
-		KStream<String, SimplePojoObject> kStreamGreaterThan24 = branchs.get("branch-greaterThan34")
-				.selectKey((k, v) -> k);
-		KStream<String, SimplePojoObject> kStreamLessThan24 = branchs.get("branch-lessThan34")
-				.selectKey((k, v) -> k);
+		KStream<String, SimplePojoObject> kStreamGreaterThan24 = branchs.get("branch-greaterThan34");
+		KStream<String, SimplePojoObject> kStreamLessThan24 = branchs.get("branch-lessThan34");
 
-				
 		kStreamGreaterThan24.join(kStreamLessThan24,
 				(left, right) -> new JoinedObjects(left, right), // lambda Joiner, same as create above, but inline
-				JoinWindows.of(Duration.ofSeconds(30)),
+				JoinWindows.of(Duration.ofSeconds(60)),
 				StreamJoined.with(Serdes.String(), new CustomSerdes(), new CustomSerdes()))
-				//with GroupBy we can select a new key for the data, or we can use GroupByKey to select the key thats ships with the original data.
-				.groupBy((k,v) -> k,Grouped.with(Serdes.String(), new CustomSerdesForJoinedObjects())) //A complex type must implement a new Serdes
-				.count().toStream() //count and convert back to stream
-				.print(Printed.<String, Long>toSysOut().withLabel("Joins"));
+				// with GroupBy we can select a new key for the data, or we can use GroupByKey
+				// to select the key thats ships with the original data.
+				.groupBy((k, v) -> k, Grouped.with(Serdes.String(), new CustomSerdesForJoinedObjects()))
+				.aggregate(
+						InitializerForAggregate::new,
+						(key, value, initializedVar) -> initializedVar.addNewData(key, value),
+						Materialized.with(Serdes.String(), new CustomSerDesForInitializerForAggregate()))
+				.toStream()
+				.print(Printed.<String, InitializerForAggregate>toSysOut().withLabel("Joins"));
 
 		consumer = new KafkaStreams(builder.build(), props);
 		consumer.start();
+
+		// --------------------- end --------------------------------
 
 		Runtime.getRuntime().addShutdownHook(new Thread(consumer::close));
 
