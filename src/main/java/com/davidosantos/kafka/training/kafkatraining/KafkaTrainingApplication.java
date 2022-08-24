@@ -23,6 +23,7 @@ import org.apache.kafka.common.serialization.Serde;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
+import org.apache.kafka.common.utils.Bytes;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.StreamsBuilder;
@@ -44,6 +45,7 @@ import org.apache.kafka.streams.kstream.StreamJoined;
 import org.apache.kafka.streams.kstream.TimeWindows;
 import org.apache.kafka.streams.kstream.ValueJoiner;
 import org.apache.kafka.streams.kstream.internals.MaterializedInternal;
+import org.apache.kafka.streams.state.KeyValueStore;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.scheduling.annotation.EnableScheduling;
@@ -74,6 +76,7 @@ public class KafkaTrainingApplication {
 		this.props.put(StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG, Serdes.String().getClass());
 		this.props.put(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, Serdes.String().getClass());
 		this.props.put("schema.registry.url", "http://schema-registry:8081");
+		this.props.put(StreamsConfig.APPLICATION_SERVER_CONFIG, "app:8080");
 
 		// ------------------------ Statefuless Operations -------------------------
 		// ---------------------- 1 -----------------------
@@ -602,9 +605,45 @@ public class KafkaTrainingApplication {
 		// consumer = new KafkaStreams(builder.build(), props);
 		// consumer.start();
 
+		// // ---------------------- 16 -----------------------
+		// // using Join, and Group By, aggregate with class implementing
+		// // initializerForAggregate
+		// // https://www.confluent.io/blog/crossing-streams-joins-apache-kafka/
+		// StreamsBuilder builder = new StreamsBuilder();
+		// KStream<String, SimplePojoObject> lines = builder.stream("stream-topic-custom-serdes",
+		// 		Consumed.with(Serdes.String(), new CustomSerdes()));
+
+		// Map<String, KStream<String, SimplePojoObject>> branchs = lines.split(Named.as("branch-")) // if not set a name
+		// 		// fakfka will put
+		// 		// default name
+		// 		.branch((key, value) -> value.getAge() >= 34, Branched.as("greaterThan34"))
+		// 		.branch((key, value) -> value.getAge() < 34, Branched.as("lessThan34"))
+		// 		.noDefaultBranch();
+		// // change the key
+		// KStream<String, SimplePojoObject> kStreamGreaterThan24 = branchs.get("branch-greaterThan34");
+		// KStream<String, SimplePojoObject> kStreamLessThan24 = branchs.get("branch-lessThan34");
+
+		// kStreamGreaterThan24.join(kStreamLessThan24,
+		// 		(left, right) -> new JoinedObjects(left, right), // lambda Joiner, same as create above, but inline
+		// 		JoinWindows.of(Duration.ofSeconds(60)),
+		// 		StreamJoined.with(Serdes.String(), new CustomSerdes(), new CustomSerdes()))
+		// 		// with GroupBy we can select a new key for the data, or we can use GroupByKey
+		// 		// to select the key thats ships with the original data.
+		// 		.groupBy((k, v) -> k, Grouped.with(Serdes.String(), new CustomSerdesForJoinedObjects()))
+		// 		.aggregate(
+		// 				InitializerForAggregate::new,
+		// 				(key, value, initializedVar) -> initializedVar.addNewData(key, value),
+		// 				Materialized.with(Serdes.String(), new CustomSerDesForInitializerForAggregate()))
+		// 		.toStream()
+		// 		.print(Printed.<String, InitializerForAggregate>toSysOut().withLabel("Joins"));
+
+		// consumer = new KafkaStreams(builder.build(), props);
+		// consumer.start();
+
 		// ---------------------- 16 -----------------------
 		// using Join, and Group By, aggregate with class implementing
-		// initializerForAggregate
+		// initializerForAggregate.
+		// --->Using a custom state store materialized by name.
 		// https://www.confluent.io/blog/crossing-streams-joins-apache-kafka/
 		StreamsBuilder builder = new StreamsBuilder();
 		KStream<String, SimplePojoObject> lines = builder.stream("stream-topic-custom-serdes",
@@ -630,7 +669,10 @@ public class KafkaTrainingApplication {
 				.aggregate(
 						InitializerForAggregate::new,
 						(key, value, initializedVar) -> initializedVar.addNewData(key, value),
-						Materialized.with(Serdes.String(), new CustomSerDesForInitializerForAggregate()))
+						Materialized.<String,InitializerForAggregate,KeyValueStore<Bytes, byte[]>>
+						as("state-store-for-InitializerForAggregate")
+						.withKeySerde(Serdes.String())
+						.withValueSerde(new CustomSerDesForInitializerForAggregate()))
 				.toStream()
 				.print(Printed.<String, InitializerForAggregate>toSysOut().withLabel("Joins"));
 
