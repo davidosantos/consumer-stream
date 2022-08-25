@@ -26,5 +26,13 @@ public class InitializerForAggregate{
             "}";
     }
 
+    public Map<String,JoinedObjects> getAggregateMap() {
+        return this.aggregateMap;
+    }
+
+    public void setAggregateMap(Map<String,JoinedObjects> aggregateMap) {
+        this.aggregateMap = aggregateMap;
+    }
+
     
 }
