@@ -10,7 +10,6 @@ public class JoinedObjects {
     }
 
 
-
     public SimplePojoObject getKey1() {
         return this.key1;
     }

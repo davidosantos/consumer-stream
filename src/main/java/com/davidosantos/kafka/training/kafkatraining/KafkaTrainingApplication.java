@@ -13,6 +13,7 @@ import java.util.Properties;
 import java.util.logging.Logger;
 
 import javax.annotation.PostConstruct;
+import javax.websocket.Session;
 
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
@@ -26,6 +27,7 @@ import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.kafka.common.utils.Bytes;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.KeyValue;
+import org.apache.kafka.streams.StoreQueryParameters;
 import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.StreamsConfig;
 import org.apache.kafka.streams.Topology;
@@ -41,11 +43,19 @@ import org.apache.kafka.streams.kstream.Materialized;
 import org.apache.kafka.streams.kstream.Named;
 import org.apache.kafka.streams.kstream.Printed;
 import org.apache.kafka.streams.kstream.Produced;
+import org.apache.kafka.streams.kstream.SessionWindows;
+import org.apache.kafka.streams.kstream.SlidingWindows;
 import org.apache.kafka.streams.kstream.StreamJoined;
+import org.apache.kafka.streams.kstream.Suppressed;
 import org.apache.kafka.streams.kstream.TimeWindows;
 import org.apache.kafka.streams.kstream.ValueJoiner;
+import org.apache.kafka.streams.kstream.Windowed;
+import org.apache.kafka.streams.kstream.Windows;
+import org.apache.kafka.streams.kstream.Suppressed.BufferConfig;
 import org.apache.kafka.streams.kstream.internals.MaterializedInternal;
+import org.apache.kafka.streams.kstream.internals.SessionWindow;
 import org.apache.kafka.streams.state.KeyValueStore;
+import org.apache.kafka.streams.state.QueryableStoreTypes;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
@@ -65,7 +75,6 @@ public class KafkaTrainingApplication {
 	Properties props = new Properties();
 	private KafkaStreams consumer;
 
-	
 	public KafkaStreams getConsumer() {
 		return consumer;
 	}
@@ -79,7 +88,7 @@ public class KafkaTrainingApplication {
 	void doingSetups() {
 		logger.info("Doing setups..");
 		this.props.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, "kafka-1:19092,kafka-2:29092,kafka-3:39092");
-		this.props.put(StreamsConfig.APPLICATION_ID_CONFIG, "stream-consumer-6");
+		this.props.put(StreamsConfig.APPLICATION_ID_CONFIG, "stream-consumer-7");
 		this.props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
 		this.props.put(StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG, Serdes.String().getClass());
 		this.props.put(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, Serdes.String().getClass());
@@ -88,313 +97,167 @@ public class KafkaTrainingApplication {
 
 		// ------------------------ Statefuless Operations -------------------------
 		// ---------------------- 1 -----------------------
-
-		// // 1 Exercise
-		// //Simple Consumer String
-		// StreamsBuilder builder = new StreamsBuilder();
-		// KStream<String, String> lines = builder.stream("stream-topic");
-		// lines.foreach((key,value) ->{
-		// logger.info("Hello from simple stream consumer: Key: " + key + " value: "
-		// +value);
-		// });
-		// consumer = new KafkaStreams(builder.build(), props);
-		// consumer.start();
+		// ---> Simple Consumer String
+		StreamsBuilder builder = new StreamsBuilder();
+		KStream<String, String> lines = builder.stream("stream-topic");
+		lines.foreach((key, value) -> {
+			logger.info("Hello from simple stream consumer: Key: " + key + " value: "
+					+ value);
+		});
+		consumer = new KafkaStreams(builder.build(), props);
+		consumer.start();
 
 		// ---------------------- 2 -----------------------
-
-		// // 2 Exercise - Using Topology
-		// //Using Topology of our own
-		// Topology topology = new Topology();
-		// topology.addSource("SimpleSource","stream-topic");
-		// topology.addProcessor("SimpleProcessor", MyProcessor::new, "SimpleSource");
-		// consumer = new KafkaStreams(topology, props);
-		// consumer.start();
+		// ---> Using Topology of our own
+		// ---> Custom Processor MyProcessor::new
+		Topology topology = new Topology();
+		topology.addSource("SimpleSource", "stream-topic");
+		topology.addProcessor("SimpleProcessor", MyProcessor::new, "SimpleSource");
+		consumer = new KafkaStreams(topology, props);
+		consumer.start();
 
 		// ---------------------- 3 -----------------------
-
-		// // 3 Exercise
-		// //using streamBuilder e Topology
-		// StreamsBuilder builder = new StreamsBuilder();
-		// KStream<String, String> lines = builder.stream("stream-topic");
-		// lines.print(Printed.<String, String>toSysOut().withLabel("tweets-stream"));
-		// consumer = new KafkaStreams(builder.build(), props);
-		// consumer.start();
+		// ---> using streamBuilder and .print(Printed...
+		StreamsBuilder builder = new StreamsBuilder();
+		KStream<String, String> lines = builder.stream("stream-topic");
+		lines.print(Printed.<String, String>toSysOut().withLabel("tweets-stream"));
+		consumer = new KafkaStreams(builder.build(), props);
+		consumer.start();
 
 		// ---------------------- 4 -----------------------
-
-		// 4 Exercise
-		// //using streamBuilder and Topology with custom Serdes
-		// StreamsBuilder builder = new StreamsBuilder();
-		// KStream<String, SimplePojoObject> lines =
-		// builder.stream("stream-topic-custom-serdes",
-		// Consumed.with(Serdes.String(), new CustomSerdes()));
-		// lines.print(Printed.<String,
-		// SimplePojoObject>toSysOut().withLabel("SimplePojoObject-stream"));
-		// consumer = new KafkaStreams(builder.build(), props);
-		// consumer.start();
+		// --->using custom Serdes, CustomSerdes.java
+		StreamsBuilder builder = new StreamsBuilder();
+		KStream<String, SimplePojoObject> lines = builder.stream("stream-topic-custom-serdes",
+				Consumed.with(Serdes.String(), new CustomSerdes()));
+		lines.print(Printed.<String, SimplePojoObject>toSysOut().withLabel("SimplePojoObject-stream"));
+		consumer = new KafkaStreams(builder.build(), props);
+		consumer.start();
 
 		// ---------------------- 5 -----------------------
 
-		// // 5 Exercise
-		// //using streamBuilder and Topology with custom Serdes, and filtering
-		// StreamsBuilder builder = new StreamsBuilder();
-		// KStream<String, SimplePojoObject> lines =
-		// builder.stream("stream-topic-custom-serdes",
-		// Consumed.with(Serdes.String(), new CustomSerdes()));
-		// lines.filter((key,simplePojoObject) -> simplePojoObject.getAge()>=34)
-		// .print(Printed.<String,
-		// SimplePojoObject>toSysOut().withLabel("SimplePojoObject-stream"));
-		// consumer = new KafkaStreams(builder.build(), props);
-		// consumer.start();
+		// --->using filtering in lambda functions
+		StreamsBuilder builder = new StreamsBuilder();
+		KStream<String, SimplePojoObject> lines = builder.stream("stream-topic-custom-serdes",
+				Consumed.with(Serdes.String(), new CustomSerdes()));
+		lines.filter((key, simplePojoObject) -> simplePojoObject.getAge() >= 34)
+				.print(Printed.<String, SimplePojoObject>toSysOut().withLabel("SimplePojoObject-stream"));
+		consumer = new KafkaStreams(builder.build(), props);
+		consumer.start();
 
 		// ---------------------- 6 -----------------------
-
-		// // 6 Exercise
-		// //using streamBuilder and Topology with custom Serdes, and filtering Not
-		// StreamsBuilder builder = new StreamsBuilder();
-		// KStream<String, SimplePojoObject> lines =
-		// builder.stream("stream-topic-custom-serdes",
-		// Consumed.with(Serdes.String(), new CustomSerdes()));
-		// lines.filterNot((key,simplePojoObject) -> simplePojoObject.getAge()>=34)
-		// .print(Printed.<String,
-		// SimplePojoObject>toSysOut().withLabel("SimplePojoObject-stream"));
-		// consumer = new KafkaStreams(builder.build(), props);
-		// consumer.start();
+		// --->using filteringNot in lambda functions
+		StreamsBuilder builder = new StreamsBuilder();
+		KStream<String, SimplePojoObject> lines = builder.stream("stream-topic-custom-serdes",
+				Consumed.with(Serdes.String(), new CustomSerdes()));
+		lines.filterNot((key, simplePojoObject) -> simplePojoObject.getAge() >= 34)
+				.print(Printed.<String, SimplePojoObject>toSysOut().withLabel("SimplePojoObject-stream"));
+		consumer = new KafkaStreams(builder.build(), props);
+		consumer.start();
 
 		// ---------------------- 7 -----------------------
+		// --->using split to create separate KStreams
+		StreamsBuilder builder = new StreamsBuilder();
+		KStream<String, SimplePojoObject> lines = builder.stream("stream-topic-custom-serdes",
+				Consumed.with(Serdes.String(), new CustomSerdes()));
 
-		// // 7 Exercise
-		// // using streamBuilder and Topology with custom Serdes, and branching results
-		// //Used to create separate KStream's with split
-		// StreamsBuilder builder = new StreamsBuilder();
-		// KStream<String, SimplePojoObject> lines =
-		// builder.stream("stream-topic-custom-serdes",
-		// Consumed.with(Serdes.String(), new CustomSerdes()));
+		Map<String, KStream<String, SimplePojoObject>> branchs = lines.split(Named.as("branch-")) // if not set a name
+				// kafka will put
+				// defaultname
+				.branch((key, value) -> value.getAge() >= 34, Branched.as("greaterThan34"))
+				.branch((key, value) -> value.getAge() < 34, Branched.as("lessThan34"))
+				.noDefaultBranch();
 
-		// Map<String, KStream<String, SimplePojoObject>> branchs =
-		// lines.split(Named.as("branch-")) //if not set a name fakfka will put default
-		// name
-		// .branch((key, value) -> value.getAge() >= 34, Branched.as("greaterThan34"))
-		// .branch((key, value) -> value.getAge() < 34, Branched.as("lessThan34"))
-		// .noDefaultBranch();
+		if (branchs.containsKey("branch-greaterThan34")) // concatened as defined above
+			branchs.get("branch-greaterThan34")
+					.print(Printed.<String, SimplePojoObject>toSysOut().withLabel("greaterThan34"));
 
-		// if (branchs.containsKey("branch-greaterThan34")) //concatened as defined
-		// above
-		// branchs.get("branch-greaterThan34")
-		// .print(Printed.<String,
-		// SimplePojoObject>toSysOut().withLabel("greaterThan34"));
+		if (branchs.containsKey("branch-lessThan34"))
+			branchs.get("branch-lessThan34")
+					.print(Printed.<String, SimplePojoObject>toSysOut().withLabel("lessThan34"));
 
-		// if (branchs.containsKey("branch-lessThan34"))
-		// branchs.get("branch-lessThan34")
-		// .print(Printed.<String, SimplePojoObject>toSysOut().withLabel("lessThan34"));
-
-		// consumer = new KafkaStreams(builder.build(), props);
-		// consumer.start();
+		consumer = new KafkaStreams(builder.build(), props);
+		consumer.start();
 
 		// ---------------------- 8 -----------------------
+		// ---> using Map to rekey or change data in the message, using KeyValue.pair()
+		// of the library
+		// ---> there is also a mapValues, used to map any field of the data
+		StreamsBuilder builder = new StreamsBuilder();
+		KStream<String, SimplePojoObject> lines = builder.stream("stream-topic-custom-serdes",
+				Consumed.with(Serdes.String(), new CustomSerdes()));
 
-		// // 8 Exercise
-		// // using streamBuilder and Topology with custom Serdes, and branching results
-		// // Used to create separate KStream's with split, using Map to rekey
-		// //there is also a mapValues, used to map any field of the data
-		// StreamsBuilder builder = new StreamsBuilder();
-		// KStream<String, SimplePojoObject> lines =
-		// builder.stream("stream-topic-custom-serdes",
-		// Consumed.with(Serdes.String(), new CustomSerdes()));
+		Map<String, KStream<String, SimplePojoObject>> branchs = lines.split(Named.as("branch-"))
+				.branch((key, value) -> value.getAge() >= 34, Branched.as("greaterThan34"))
+				.branch((key, value) -> value.getAge() < 34, Branched.as("lessThan34"))
+				.noDefaultBranch();
 
-		// Map<String, KStream<String, SimplePojoObject>> branchs =
-		// lines.split(Named.as("branch-")) // if not set a name
-		// // fakfka will put
-		// // default name
-		// .branch((key, value) -> value.getAge() >= 34, Branched.as("greaterThan34"))
-		// .branch((key, value) -> value.getAge() < 34, Branched.as("lessThan34"))
-		// .noDefaultBranch();
+		if (branchs.containsKey("branch-greaterThan34"))
+			branchs.get("branch-greaterThan34")
+					.map((key, value) -> KeyValue.pair(key + "-" + value.getAge(), value))
+					.print(Printed.<String, SimplePojoObject>toSysOut().withLabel("greaterThan34"));
 
-		// if (branchs.containsKey("branch-greaterThan34")) // concatened as defined
-		// above
-		// branchs.get("branch-greaterThan34")
-		// .map((key, value) -> KeyValue.pair(key + "-" + value.getAge(), value))
-		// .print(Printed.<String,
-		// SimplePojoObject>toSysOut().withLabel("greaterThan34"));
+		if (branchs.containsKey("branch-lessThan34"))
+			branchs.get("branch-lessThan34")
+					.mapValues((value) -> {
+						value.setAge(value.getAge() + 1);
+						return value;
+					})
+					.print(Printed.<String, SimplePojoObject>toSysOut().withLabel("lessThan34"));
 
-		// if (branchs.containsKey("branch-lessThan34"))
-		// branchs.get("branch-lessThan34")
-		// .map((key, value) -> KeyValue.pair(key + "-" + value.getAge(), value))
-		// .print(Printed.<String, SimplePojoObject>toSysOut().withLabel("lessThan34"));
-
-		// consumer = new KafkaStreams(builder.build(), props);
-		// consumer.start();
+		consumer = new KafkaStreams(builder.build(), props);
+		consumer.start();
 
 		// ---------------------- 9 -----------------------
+		// ---> using Merge to merge KafkaStreams.
+		StreamsBuilder builder = new StreamsBuilder();
+		KStream<String, SimplePojoObject> lines = builder.stream("stream-topic-custom-serdes",
+				Consumed.with(Serdes.String(), new CustomSerdes()));
 
-		// // 9 Exercise
-		// // using streamBuilder and Topology with custom Serdes, and branching results
-		// // Used to create separate KStream's with split, using Map to rekey
-		// // using Merce
-		// StreamsBuilder builder = new StreamsBuilder();
-		// KStream<String, SimplePojoObject> lines =
-		// builder.stream("stream-topic-custom-serdes",
-		// Consumed.with(Serdes.String(), new CustomSerdes()));
+		Map<String, KStream<String, SimplePojoObject>> branchs = lines.split(Named.as("branch-"))
+				.branch((key, value) -> value.getAge() >= 34, Branched.as("greaterThan34"))
+				.branch((key, value) -> value.getAge() < 34, Branched.as("lessThan34"))
+				.noDefaultBranch();
 
-		// Map<String, KStream<String, SimplePojoObject>> branchs =
-		// lines.split(Named.as("branch-")) // if not set a name
-		// // fakfka will put
-		// // default name
-		// .branch((key, value) -> value.getAge() >= 34, Branched.as("greaterThan34"))
-		// .branch((key, value) -> value.getAge() < 34, Branched.as("lessThan34"))
-		// .noDefaultBranch();
+		if (branchs.containsKey("branch-greaterThan34") &&
+				branchs.containsKey("branch-lessThan34"))
+			branchs.get("branch-greaterThan34").merge(branchs.get("branch-lessThan34"))
+					.print(Printed.<String, SimplePojoObject>toSysOut().withLabel("Merged"));
 
-		// if (branchs.containsKey("branch-greaterThan34")) // concatened as defined
-		// above
-		// branchs.get("branch-greaterThan34")
-		// .map((key, value) -> KeyValue.pair(key + "-" + value.getAge(), value))
-		// .print(Printed.<String,
-		// SimplePojoObject>toSysOut().withLabel("greaterThan34"));
-
-		// if (branchs.containsKey("branch-lessThan34"))
-		// branchs.get("branch-lessThan34")
-		// .map((key, value) -> KeyValue.pair(key + "-" + value.getAge(), value))
-		// .print(Printed.<String, SimplePojoObject>toSysOut().withLabel("lessThan34"));
-
-		// if (branchs.containsKey("branch-greaterThan34") &&
-		// branchs.containsKey("branch-lessThan34"))
-		// branchs.get("branch-greaterThan34").merge(branchs.get("branch-lessThan34"))
-		// .print(Printed.<String, SimplePojoObject>toSysOut().withLabel("Merged"));
-
-		// consumer = new KafkaStreams(builder.build(), props);
-		// consumer.start();
+		consumer = new KafkaStreams(builder.build(), props);
+		consumer.start();
 
 		// ---------------------- 10 -----------------------
+		// ---> using flatMap when working with multiple arrays object, and you want to
+		// flat that array into single array object.
+		StreamsBuilder builder = new StreamsBuilder();
+		KStream<String, SimplePojoObject> lines = builder.stream("stream-topic-custom-serdes",
+				Consumed.with(Serdes.String(), new CustomSerdes()));
 
-		// // 10 Exercise
-		// // using streamBuilder and Topology with custom Serdes, and branching results
-		// // Used to create separate KStream's with split
-		// // using flatMap can be used to extracts fields of the data class or make any
-		// // operation with the data
-		// StreamsBuilder builder = new StreamsBuilder();
-		// KStream<String, SimplePojoObject> lines =
-		// builder.stream("stream-topic-custom-serdes",
-		// Consumed.with(Serdes.String(), new CustomSerdes()));
+		Map<String, KStream<String, SimplePojoObject>> branchs = lines.split(Named.as("branch-"))
+				.branch((key, value) -> value.getAge() >= 34, Branched.as("greaterThan34"))
+				.branch((key, value) -> value.getAge() < 34, Branched.as("lessThan34"))
+				.noDefaultBranch();
 
-		// Map<String, KStream<String, SimplePojoObject>> branchs =
-		// lines.split(Named.as("branch-")) // if not set a name
-		// // fakfka will put
-		// // default name
-		// .branch((key, value) -> value.getAge() >= 34, Branched.as("greaterThan34"))
-		// .branch((key, value) -> value.getAge() < 34, Branched.as("lessThan34"))
-		// .noDefaultBranch();
+		List<Integer> ages = new ArrayList<>();
 
-		// if (branchs.containsKey("branch-greaterThan34")) // concatened as defined
-		// above
-		// branchs.get("branch-greaterThan34")
-		// .map((key, value) -> KeyValue.pair(key + "-" + value.getAge(), value))
-		// .print(Printed.<String,
-		// SimplePojoObject>toSysOut().withLabel("greaterThan34"));
+		if (branchs.containsKey("branch-greaterThan34") &&
+				branchs.containsKey("branch-lessThan34"))
+			branchs.get("branch-greaterThan34").merge(branchs.get("branch-lessThan34"))
+					.flatMapValues((simplePojo) -> {
+						ages.add(simplePojo.getAge());
+						logger.info("ages are:" + ages);
+						return ages;
+					}).foreach((key, v) -> {
+						logger.info("key: " + key);
+						logger.info("v: " + v);
+					});
 
-		// if (branchs.containsKey("branch-lessThan34"))
-		// branchs.get("branch-lessThan34")
-		// .map((key, value) -> KeyValue.pair(key + "-" + value.getAge(), value))
-		// .print(Printed.<String, SimplePojoObject>toSysOut().withLabel("lessThan34"));
-
-		// List<Integer> ages = new ArrayList<>();
-
-		// if (branchs.containsKey("branch-greaterThan34") &&
-		// branchs.containsKey("branch-lessThan34"))
-		// branchs.get("branch-greaterThan34").merge(branchs.get("branch-lessThan34"))
-		// .flatMapValues((simplePojo) -> {
-		// ages.add(simplePojo.getAge());
-		// logger.info("ages are:" + ages);
-		// return ages;
-		// }).foreach((key, v) -> {
-		// logger.info("key: " + key);
-		// logger.info("v: " + v);
-		// });
-		// ;
-
-		// consumer = new KafkaStreams(builder.build(), props);
-		// consumer.start();
+		consumer = new KafkaStreams(builder.build(), props);
+		consumer.start();
 
 		// ---------------------- 11 -----------------------
-
-		// // // 11 Exercise
-		// // // using streamBuilder and Topology with custom Serdes, and branching
-		// results
-		// // // Used to create separate KStream's with split
-		// // // producing data to another topic using avro.
-		// // // dependendy necessary to import avro Serdes ->
-		// // // io.confluent:kafka-streams-avro-serde
-		// // // <!--
-		// // https://mvnrepository.com/artifact/io.confluent/kafka-streams-avro-serde
-		// // // -->
-		// // // <dependency>
-		// // // <groupId>io.confluent</groupId>
-		// // // <artifactId>kafka-streams-avro-serde</artifactId>
-		// // // <version>7.2.1</version>
-		// // // </dependency>
-		// StreamsBuilder builder = new StreamsBuilder();
-		// KStream<String, SimplePojoObject> lines =
-		// builder.stream("stream-topic-custom-serdes",
-		// Consumed.with(Serdes.String(), new CustomSerdes()));
-
-		// Map<String, KStream<String, SimplePojoObject>> branchs =
-		// lines.split(Named.as("branch-")) // if not set a name
-		// // fakfka will put
-		// // default name
-		// .branch((key, value) -> value.getAge() >= 34, Branched.as("greaterThan34"))
-		// .branch((key, value) -> value.getAge() < 34, Branched.as("lessThan34"))
-		// .noDefaultBranch();
-
-		// if (branchs.containsKey("branch-greaterThan34")) // concatened as defineda
-		// bove
-		// branchs.get("branch-greaterThan34")
-		// .map((key, value) -> KeyValue.pair(key + "-" + value.getAge(), value))
-		// .print(Printed.<String,
-		// SimplePojoObject>toSysOut().withLabel("greaterThan34"));
-
-		// if (branchs.containsKey("branch-lessThan34"))
-		// branchs.get("branch-lessThan34")
-		// .map((key, value) -> KeyValue.pair(key + "-" + value.getAge(), value))
-		// .print(Printed.<String, SimplePojoObject>toSysOut().withLabel("lessThan34"));
-
-		// Map<String, String> serdeConfig =
-		// Collections.singletonMap("schema.registry.url",
-		// "http://schema-registry:8081");
-		// Serde<SimplePojoObjectAvro> avroSerdes = new SpecificAvroSerde<>();
-		// avroSerdes.configure(serdeConfig, false);
-
-		// if (branchs.containsKey("branch-greaterThan34") &&
-		// branchs.containsKey("branch-lessThan34"))
-		// branchs.get("branch-greaterThan34").merge(branchs.get("branch-lessThan34"))
-		// .flatMapValues((simplePojo) -> {
-		// List<SimplePojoObjectAvro> simplePojoObjectAvro = new ArrayList<>();
-
-		// simplePojoObjectAvro.add(SimplePojoObjectAvro.newBuilder()
-		// .setName(simplePojo.getName())
-		// .setAge(simplePojo.getAge())
-		// .setBirthDate(
-		// Instant.ofEpochMilli(
-		// simplePojo.getBirthDate().getTime()).atZone(ZoneId.systemDefault())
-		// .toLocalDate())
-		// .build());
-		// return simplePojoObjectAvro;
-		// })
-		// .to("stream-topic-custom-serdes-avro2", Produced.with(Serdes.String(),
-		// avroSerdes));
-
-		// consumer = new KafkaStreams(builder.build(), props);
-		// consumer.start();
-
-		// https://toolslick.com/generation/metadata/avro-schema-from-json
-		// https://avro.apache.org/docs/1.11.1/getting-started-java/
-		// Usefull links to get started
-
-		// ---------------------- 12 -----------------------
-
-		// 12 Exercise
-		// using streamBuilder and Topology with custom Serdes, and branching results
-		// Used to create separate KStream's with split
-		// producing data to another topic using avro.
-		// dependendy necessary to import avro Serdes ->
+		// ---> using producing data to another topic using avro.
+		// ---> dependendy necessary to import avro Serdes ->
 		// io.confluent:kafka-streams-avro-serde
 		// <!--
 		// https://mvnrepository.com/artifact/io.confluent/kafka-streams-avro-serde
@@ -404,64 +267,86 @@ public class KafkaTrainingApplication {
 		// <artifactId>kafka-streams-avro-serde</artifactId>
 		// <version>7.2.1</version>
 		// </dependency>
-		// changing key Using selectKey
-		// StreamsBuilder builder = new StreamsBuilder();
-		// KStream<String, SimplePojoObject> lines =
-		// builder.stream("stream-topic-custom-serdes",
-		// Consumed.with(Serdes.String(), new CustomSerdes()));
-
-		// Map<String, KStream<String, SimplePojoObject>> branchs =
-		// lines.split(Named.as("branch-")) // if not set a name
-		// // fakfka will put
-		// // default name
-		// .branch((key, value) -> value.getAge() >= 34, Branched.as("greaterThan34"))
-		// .branch((key, value) -> value.getAge() < 34, Branched.as("lessThan34"))
-		// .noDefaultBranch();
-
-		// if (branchs.containsKey("branch-greaterThan34")) // concatened as defineda
-		// bove
-		// branchs.get("branch-greaterThan34")
-		// .map((key, value) -> KeyValue.pair(key + "-" + value.getAge(), value))
-		// .print(Printed.<String,
-		// SimplePojoObject>toSysOut().withLabel("greaterThan34"));
-
-		// if (branchs.containsKey("branch-lessThan34"))
-		// branchs.get("branch-lessThan34")
-		// .map((key, value) -> KeyValue.pair(key + "-" + value.getAge(), value))
-		// .print(Printed.<String, SimplePojoObject>toSysOut().withLabel("lessThan34"));
-
-		// Map<String, String> serdeConfig =
-		// Collections.singletonMap("schema.registry.url",
-		// "http://schema-registry:8081");
-		// Serde<SimplePojoObjectAvro> avroSerdes = new SpecificAvroSerde<>();
-		// avroSerdes.configure(serdeConfig, false);
-
-		// if (branchs.containsKey("branch-greaterThan34") &&
-		// branchs.containsKey("branch-lessThan34"))
-		// branchs.get("branch-greaterThan34").merge(branchs.get("branch-lessThan34"))
-		// .selectKey((key,value) -> "key-"+value.getAge())
-		// .flatMapValues((simplePojo) -> {
-		// List<SimplePojoObjectAvro> simplePojoObjectAvro = new ArrayList<>();
-
-		// simplePojoObjectAvro.add(SimplePojoObjectAvro.newBuilder()
-		// .setName(simplePojo.getName())
-		// .setAge(simplePojo.getAge())
-		// .setBirthDate(
-		// Instant.ofEpochMilli(
-		// simplePojo.getBirthDate().getTime()).atZone(ZoneId.systemDefault())
-		// .toLocalDate())
-		// .build());
-		// return simplePojoObjectAvro;
-		// })
-		// .to("stream-topic-custom-serdes-avro2", Produced.with(Serdes.String(),
-		// avroSerdes));
-
-		// consumer = new KafkaStreams(builder.build(), props);
-		// consumer.start();
-
 		// https://toolslick.com/generation/metadata/avro-schema-from-json
 		// https://avro.apache.org/docs/1.11.1/getting-started-java/
 		// Usefull links to get started
+		StreamsBuilder builder = new StreamsBuilder();
+		KStream<String, SimplePojoObject> lines = builder.stream("stream-topic-custom-serdes",
+				Consumed.with(Serdes.String(), new CustomSerdes()));
+
+		Map<String, KStream<String, SimplePojoObject>> branchs = lines.split(Named.as("branch-"))
+				.branch((key, value) -> value.getAge() >= 34, Branched.as("greaterThan34"))
+				.branch((key, value) -> value.getAge() < 34, Branched.as("lessThan34"))
+				.noDefaultBranch();
+
+		Map<String, String> serdeConfig = Collections.singletonMap("schema.registry.url",
+				"http://schema-registry:8081");
+		Serde<SimplePojoObjectAvro> avroSerdes = new SpecificAvroSerde<>();
+		avroSerdes.configure(serdeConfig, false);
+
+		if (branchs.containsKey("branch-greaterThan34") &&
+				branchs.containsKey("branch-lessThan34"))
+			branchs.get("branch-greaterThan34").merge(branchs.get("branch-lessThan34"))
+					.flatMapValues((simplePojo) -> {
+						List<SimplePojoObjectAvro> simplePojoObjectAvro = new ArrayList<>();
+
+						simplePojoObjectAvro.add(SimplePojoObjectAvro.newBuilder()
+								.setName(simplePojo.getName())
+								.setAge(simplePojo.getAge())
+								.setBirthDate(
+										Instant.ofEpochMilli(
+												simplePojo.getBirthDate().getTime()).atZone(ZoneId.systemDefault())
+												.toLocalDate())
+								.build());
+						return simplePojoObjectAvro;
+					})
+					.to("stream-topic-custom-serdes-avro2",
+							Produced.with(Serdes.String(), avroSerdes));
+
+		consumer = new KafkaStreams(builder.build(), props);
+		consumer.start();
+
+		// ---------------------- 12 -----------------------
+		// ---> changing key Using selectKey, great when message has no key
+		// ---> Warning: Since kafka message are immutable, using the selectKey method
+		// will cause kafka to
+		// create a new topic for storing messages this new key.
+		StreamsBuilder builder = new StreamsBuilder();
+		KStream<String, SimplePojoObject> lines = builder.stream("stream-topic-custom-serdes",
+				Consumed.with(Serdes.String(), new CustomSerdes()));
+
+		Map<String, KStream<String, SimplePojoObject>> branchs = lines.split(Named.as("branch-"))
+				.branch((key, value) -> value.getAge() >= 34, Branched.as("greaterThan34"))
+				.branch((key, value) -> value.getAge() < 34, Branched.as("lessThan34"))
+				.noDefaultBranch();
+
+		Map<String, String> serdeConfig = Collections.singletonMap("schema.registry.url",
+				"http://schema-registry:8081");
+		Serde<SimplePojoObjectAvro> avroSerdes = new SpecificAvroSerde<>();
+		avroSerdes.configure(serdeConfig, false);
+
+		if (branchs.containsKey("branch-greaterThan34") &&
+				branchs.containsKey("branch-lessThan34"))
+			branchs.get("branch-greaterThan34").merge(branchs.get("branch-lessThan34"))
+					.selectKey((key, value) -> "key-" + value.getAge())
+					.flatMapValues((simplePojo) -> {
+						List<SimplePojoObjectAvro> simplePojoObjectAvro = new ArrayList<>();
+
+						simplePojoObjectAvro.add(SimplePojoObjectAvro.newBuilder()
+								.setName(simplePojo.getName())
+								.setAge(simplePojo.getAge())
+								.setBirthDate(
+										Instant.ofEpochMilli(
+												simplePojo.getBirthDate().getTime()).atZone(ZoneId.systemDefault())
+												.toLocalDate())
+								.build());
+						return simplePojoObjectAvro;
+					})
+					.to("stream-topic-custom-serdes-avro2", Produced.with(Serdes.String(),
+							avroSerdes));
+
+		consumer = new KafkaStreams(builder.build(), props);
+		consumer.start();
 
 		// -----------------------------------Summary ------------------------------
 		// • Filtering data with filter and filterNot
@@ -489,208 +374,346 @@ public class KafkaTrainingApplication {
 		// Windowing data Group events that have close temporal proximity • windowedBy
 
 		// ---------------------- 13 -----------------------
-		// using Join
+		// ---> using Join
+		// ---> using peek to log the messages.
 		// https://www.confluent.io/blog/crossing-streams-joins-apache-kafka/
-		// StreamsBuilder builder = new StreamsBuilder();
-		// KStream<String, SimplePojoObject> lines =
-		// builder.stream("stream-topic-custom-serdes",
-		// Consumed.with(Serdes.String(), new CustomSerdes()));
 
-		// Map<String, KStream<String, SimplePojoObject>> branchs =
-		// lines.split(Named.as("branch-")) // if not set a name
-		// // fakfka will put
-		// // default name
-		// .branch((key, value) -> value.getAge() >= 34, Branched.as("greaterThan34"))
-		// .branch((key, value) -> value.getAge() < 34, Branched.as("lessThan34"))
-		// .noDefaultBranch();
-		// // change the key
-		// KStream<String, SimplePojoObject> kStreamGreaterThan24 =
-		// branchs.get("branch-greaterThan34")
-		// .selectKey((k, v) -> k);
-		// KStream<String, SimplePojoObject> kStreamLessThan24 =
-		// branchs.get("branch-lessThan34")
-		// .selectKey((k, v) -> k);
+		StreamsBuilder builder = new StreamsBuilder();
+		KStream<String, SimplePojoObject> lines = builder.stream("stream-topic-custom-serdes",
+				Consumed.with(Serdes.String(), new CustomSerdes()));
 
-		// // kStreamGreaterThan24
-		// //
-		// .print(Printed.<String,SimplePojoObject>toSysOut().withLabel("kStreamGreaterThan24"));
-		// // kStreamLessThan24
-		// //
-		// .print(Printed.<String,SimplePojoObject>toSysOut().withLabel("kStreamLessThan24"));
+		Map<String, KStream<String, SimplePojoObject>> branchs = lines.split(Named.as("branch-"))
+				.branch((key, value) -> value.getAge() >= 34, Branched.as("greaterThan34"))
+				.branch((key, value) -> value.getAge() < 34, Branched.as("lessThan34"))
+				.noDefaultBranch();
 
-		// // //create a joiner
-		// // ValueJoiner<SimplePojoObject, SimplePojoObject, JoinedObjects> joiner =
-		// // (left, right) ->
-		// // new JoinedObjects(left, right);
+		KStream<String, SimplePojoObject> kStreamGreaterThan24 = branchs.get("branch-greaterThan34");
+		KStream<String, SimplePojoObject> kStreamLessThan24 = branchs.get("branch-lessThan34");
 
-		// kStreamGreaterThan24.join(kStreamLessThan24,
-		// (left, right) -> new JoinedObjects(left, right), // lambda Joiner, same as
-		// create above, but inline
-		// JoinWindows.of(Duration.ofSeconds(30)),
-		// StreamJoined.with(Serdes.String(), new CustomSerdes(), new CustomSerdes()))
-		// .peek((k, v) -> logger.info("key: " + k))
-		// .print(Printed.<String, JoinedObjects>toSysOut().withLabel("Found a Join"));
+		// //create a joiner
+		// ValueJoiner<SimplePojoObject, SimplePojoObject, JoinedObjects> joiner =
+		// (left, right) ->
+		// new JoinedObjects(left, right);
 
-		// consumer = new KafkaStreams(builder.build(), props);
-		// consumer.start();
+		kStreamGreaterThan24.join(kStreamLessThan24,
+				(left, right) -> new JoinedObjects(left, right), // lambda Joiner, same as create above, but inline
+				JoinWindows.of(Duration.ofSeconds(30)),
+				StreamJoined.with(Serdes.String(), new CustomSerdes(), new CustomSerdes()))
+				.peek((k, v) -> logger.info("key: " + k))
+				.print(Printed.<String, JoinedObjects>toSysOut().withLabel("Found a Join"));
+
+		consumer = new KafkaStreams(builder.build(), props);
+		consumer.start();
 
 		// ---------------------- 14 -----------------------
 		// using Join, and Group By to count
+		// ---> Warning: Since kafka message are immutable, using the groupBy method
+		// will cause kafka to
+		// create a new topic for storing messages this new key.
+		// if your messages has a key, it is strongly recommended to use the groupByKey
+		// method.
 		// https://www.confluent.io/blog/crossing-streams-joins-apache-kafka/
-		// StreamsBuilder builder = new StreamsBuilder();
-		// KStream<String, SimplePojoObject> lines =
-		// builder.stream("stream-topic-custom-serdes",
-		// Consumed.with(Serdes.String(), new CustomSerdes()));
+		StreamsBuilder builder = new StreamsBuilder();
+		KStream<String, SimplePojoObject> lines = builder.stream("stream-topic-custom-serdes",
+				Consumed.with(Serdes.String(), new CustomSerdes()));
 
-		// Map<String, KStream<String, SimplePojoObject>> branchs =
-		// lines.split(Named.as("branch-")) // if not set a name
-		// // fakfka will put
-		// // default name
-		// .branch((key, value) -> value.getAge() >= 34, Branched.as("greaterThan34"))
-		// .branch((key, value) -> value.getAge() < 34, Branched.as("lessThan34"))
-		// .noDefaultBranch();
-		// // change the key
-		// KStream<String, SimplePojoObject> kStreamGreaterThan24 =
-		// branchs.get("branch-greaterThan34")
-		// .selectKey((k, v) -> k);
-		// KStream<String, SimplePojoObject> kStreamLessThan24 =
-		// branchs.get("branch-lessThan34")
-		// .selectKey((k, v) -> k);
+		Map<String, KStream<String, SimplePojoObject>> branchs = lines.split(Named.as("branch-"))
+				.branch((key, value) -> value.getAge() >= 34, Branched.as("greaterThan34"))
+				.branch((key, value) -> value.getAge() < 34, Branched.as("lessThan34"))
+				.noDefaultBranch();
+		KStream<String, SimplePojoObject> kStreamGreaterThan24 = branchs.get("branch-greaterThan34");
+		KStream<String, SimplePojoObject> kStreamLessThan24 = branchs.get("branch-lessThan34");
 
-		// kStreamGreaterThan24.join(kStreamLessThan24,
-		// (left, right) -> new JoinedObjects(left, right), // lambda Joiner, same as
-		// create above, but inline
-		// JoinWindows.of(Duration.ofSeconds(30)),
-		// StreamJoined.with(Serdes.String(), new CustomSerdes(), new CustomSerdes()))
-		// //with GroupBy we can select a new key for the data, or we can use GroupByKey
-		// to select the key thats ships with the original data.
-		// .groupBy((k,v) -> k,Grouped.with(Serdes.String(), new
-		// CustomSerdesForJoinedObjects())) //A complex type must implement a new Serdes
-		// .count().toStream() //count and convert back to stream
-		// .print(Printed.<String, Long>toSysOut().withLabel("Joins"));
+		kStreamGreaterThan24.join(kStreamLessThan24,
+				(left, right) -> new JoinedObjects(left, right),
+				JoinWindows.of(Duration.ofSeconds(30)),
+				StreamJoined.with(Serdes.String(), new CustomSerdes(), new CustomSerdes()))
+				// with GroupBy we can select a new key for the data, or we can use
+				// GroupByKey to select the key thats ships with the original data.
+				// A complex type must implement a new Serdes
+				.groupBy((k, v) -> k, Grouped.with(Serdes.String(), new CustomSerdesForJoinedObjects()))
+				.count().toStream() // count and convert back to stream
+				.print(Printed.<String, Long>toSysOut().withLabel("Joins"));
 
-		// consumer = new KafkaStreams(builder.build(), props);
-		// consumer.start();
+		consumer = new KafkaStreams(builder.build(), props);
+		consumer.start();
 
 		// // ---------------------- 15 -----------------------
-		// // using Join, and Group By, aggregate
-		// // https://www.confluent.io/blog/crossing-streams-joins-apache-kafka/
-		// StreamsBuilder builder = new StreamsBuilder();
-		// KStream<String, SimplePojoObject> lines =
-		// builder.stream("stream-topic-custom-serdes",
-		// Consumed.with(Serdes.String(), new CustomSerdes()));
+		// ---> using aggregate
+		StreamsBuilder builder = new StreamsBuilder();
+		KStream<String, SimplePojoObject> lines = builder.stream("stream-topic-custom-serdes",
+				Consumed.with(Serdes.String(), new CustomSerdes()));
 
-		// Map<String, KStream<String, SimplePojoObject>> branchs =
-		// lines.split(Named.as("branch-")) // if not set a name
-		// // fakfka will put
-		// // default name
-		// .branch((key, value) -> value.getAge() >= 34, Branched.as("greaterThan34"))
-		// .branch((key, value) -> value.getAge() < 34, Branched.as("lessThan34"))
-		// .noDefaultBranch();
-		// // change the key
-		// KStream<String, SimplePojoObject> kStreamGreaterThan24 =
-		// branchs.get("branch-greaterThan34");
-		// KStream<String, SimplePojoObject> kStreamLessThan24 =
-		// branchs.get("branch-lessThan34");
+		lines
+				.groupByKey()
+				.windowedBy(TimeWindows.ofSizeWithNoGrace(Duration.ofSeconds(30)))
+				.aggregate(
+						() -> 0.0,
+						(key, joinedObj, newValue) -> {
+							logger.info("===========");
+							logger.info("Key: " + key);
+							logger.info("key1.getAge(): " + joinedObj.getAge());
+							logger.info("newValue:" + newValue);
+							return newValue + 1.0;
+						},
+						Materialized.with(Serdes.String(), Serdes.Double()))
+				.toStream()
+				.map((k, v) -> KeyValue.pair(k.key(), v))
+				.peek((k, v) -> logger.info("key= " + k + " value= " + v))
+				.print(Printed.<String, Double>toSysOut().withLabel("Joins"));
 
-		// kStreamGreaterThan24.join(kStreamLessThan24,
-		// (left, right) -> new JoinedObjects(left, right), // lambda Joiner, same as
-		// create above, but inline
-		// JoinWindows.of(Duration.ofSeconds(30)),
-		// StreamJoined.with(Serdes.String(), new CustomSerdes(), new CustomSerdes()))
-		// // with GroupBy we can select a new key for the data, or we can use
-		// GroupByKey
-		// // to select the key thats ships with the original data.
-		// .groupBy((k, v) -> k, Grouped.with(Serdes.String(), new
-		// CustomSerdesForJoinedObjects()))
-		// .aggregate(
-		// () -> 0.0,
-		// (key, joinedObj, newValue) -> joinedObj.key1.getAge() + newValue,
-		// Materialized.with(Serdes.String(),Serdes.Double()))
-		// .toStream()
-		// .print(Printed.<String, Double>toSysOut().withLabel("Joins"));
-
-		// consumer = new KafkaStreams(builder.build(), props);
-		// consumer.start();
+		consumer = new KafkaStreams(builder.build(), props);
+		consumer.start();
 
 		// // ---------------------- 16 -----------------------
-		// // using Join, and Group By, aggregate with class implementing
-		// // initializerForAggregate
-		// // https://www.confluent.io/blog/crossing-streams-joins-apache-kafka/
-		// StreamsBuilder builder = new StreamsBuilder();
-		// KStream<String, SimplePojoObject> lines = builder.stream("stream-topic-custom-serdes",
-		// 		Consumed.with(Serdes.String(), new CustomSerdes()));
+		// ---> using aggregate with class, must be created a Serializer/Deserializer.
+		StreamsBuilder builder = new StreamsBuilder();
+		KStream<String, SimplePojoObject> lines = builder.stream("stream-topic-custom-serdes",
+				Consumed.with(Serdes.String(), new CustomSerdes()));
 
-		// Map<String, KStream<String, SimplePojoObject>> branchs = lines.split(Named.as("branch-")) // if not set a name
-		// 		// fakfka will put
-		// 		// default name
-		// 		.branch((key, value) -> value.getAge() >= 34, Branched.as("greaterThan34"))
-		// 		.branch((key, value) -> value.getAge() < 34, Branched.as("lessThan34"))
-		// 		.noDefaultBranch();
-		// // change the key
-		// KStream<String, SimplePojoObject> kStreamGreaterThan24 = branchs.get("branch-greaterThan34");
-		// KStream<String, SimplePojoObject> kStreamLessThan24 = branchs.get("branch-lessThan34");
+		Map<String, KStream<String, SimplePojoObject>> branchs = lines.split(Named.as("branch-"))
+				.branch((key, value) -> value.getAge() >= 34, Branched.as("greaterThan34"))
+				.branch((key, value) -> value.getAge() < 34, Branched.as("lessThan34"))
+				.noDefaultBranch();
 
-		// kStreamGreaterThan24.join(kStreamLessThan24,
-		// 		(left, right) -> new JoinedObjects(left, right), // lambda Joiner, same as create above, but inline
-		// 		JoinWindows.of(Duration.ofSeconds(60)),
-		// 		StreamJoined.with(Serdes.String(), new CustomSerdes(), new CustomSerdes()))
-		// 		// with GroupBy we can select a new key for the data, or we can use GroupByKey
-		// 		// to select the key thats ships with the original data.
-		// 		.groupBy((k, v) -> k, Grouped.with(Serdes.String(), new CustomSerdesForJoinedObjects()))
-		// 		.aggregate(
-		// 				InitializerForAggregate::new,
-		// 				(key, value, initializedVar) -> initializedVar.addNewData(key, value),
-		// 				Materialized.with(Serdes.String(), new CustomSerDesForInitializerForAggregate()))
-		// 		.toStream()
-		// 		.print(Printed.<String, InitializerForAggregate>toSysOut().withLabel("Joins"));
+		KStream<String, SimplePojoObject> kStreamGreaterThan24 = branchs.get("branch-greaterThan34");
+		KStream<String, SimplePojoObject> kStreamLessThan24 = branchs.get("branch-lessThan34");
 
-		// consumer = new KafkaStreams(builder.build(), props);
-		// consumer.start();
+		kStreamGreaterThan24.join(kStreamLessThan24,
+				(left, right) -> new JoinedObjects(left, right),
+				JoinWindows.of(Duration.ofSeconds(10)),
+				StreamJoined.with(Serdes.String(), new CustomSerdes(), new CustomSerdes()))
+				.groupBy((k, v) -> k, Grouped.with(Serdes.String(), new CustomSerdesForJoinedObjects()))
+				.aggregate(
+						InitializerForAggregate::new,
+						(key, value, initializedVar) -> initializedVar.addNewData(key, value),
+						Materialized.with(Serdes.String(), new CustomSerDesForInitializerForAggregate()))
+				.toStream()
+				.print(Printed.<String, InitializerForAggregate>toSysOut().withLabel("Joins"));
 
-		// ---------------------- 16 -----------------------
-		// using Join, and Group By, aggregate with class implementing
-		// initializerForAggregate.
-		// --->Using a custom state store materialized by name.
-		// ---> Using Stream query:
-		//InitializerForAggregate initializerForAggregate = (InitializerForAggregate) application.getConsumer().store(
-        //    StoreQueryParameters.fromNameAndType("state-store-for-InitializerForAggregate", QueryableStoreTypes.keyValueStore())
-        //).get(key);
-		// https://www.confluent.io/blog/crossing-streams-joins-apache-kafka/
+		consumer = new KafkaStreams(builder.build(), props);
+		consumer.start();
 
-		// StreamsBuilder builder = new StreamsBuilder();
-		// KStream<String, SimplePojoObject> lines = builder.stream("stream-topic-custom-serdes",
-		// 		Consumed.with(Serdes.String(), new CustomSerdes()));
+		// ---------------------- 17 -----------------------
+		// ---> Using a custom state store materialized by name with aggregate.
+		// ---> Using Stream query, to query state store materialized.
 
-		// Map<String, KStream<String, SimplePojoObject>> branchs = lines.split(Named.as("branch-")) // if not set a name
-		// 		// fakfka will put
-		// 		// default name
-		// 		.branch((key, value) -> value.getAge() >= 34, Branched.as("greaterThan34"))
-		// 		.branch((key, value) -> value.getAge() < 34, Branched.as("lessThan34"))
-		// 		.noDefaultBranch();
-		// // change the key
-		// KStream<String, SimplePojoObject> kStreamGreaterThan24 = branchs.get("branch-greaterThan34");
-		// KStream<String, SimplePojoObject> kStreamLessThan24 = branchs.get("branch-lessThan34");
+		StreamsBuilder builder = new StreamsBuilder();
+		KStream<String, SimplePojoObject> lines = builder.stream("stream-topic-custom-serdes",
+				Consumed.with(Serdes.String(), new CustomSerdes()));
 
-		// kStreamGreaterThan24.join(kStreamLessThan24,
-		// 		(left, right) -> new JoinedObjects(left, right), // lambda Joiner, same as create above, but inline
-		// 		JoinWindows.of(Duration.ofSeconds(60)),
-		// 		StreamJoined.with(Serdes.String(), new CustomSerdes(), new CustomSerdes()))
-		// 		// with GroupBy we can select a new key for the data, or we can use GroupByKey
-		// 		// to select the key thats ships with the original data.
-		// 		.groupBy((k, v) -> k, Grouped.with(Serdes.String(), new CustomSerdesForJoinedObjects()))
-		// 		.aggregate(
-		// 				InitializerForAggregate::new,
-		// 				(key, value, initializedVar) -> initializedVar.addNewData(key, value),
-		// 				Materialized.<String,InitializerForAggregate,KeyValueStore<Bytes, byte[]>>
-		// 				as("state-store-for-InitializerForAggregate")
-		// 				.withKeySerde(Serdes.String())
-		// 				.withValueSerde(new CustomSerDesForInitializerForAggregate()))
-		// 		.toStream()
-		// 		.print(Printed.<String, InitializerForAggregate>toSysOut().withLabel("Joins"));
+		Map<String, KStream<String, SimplePojoObject>> branchs = lines.split(Named.as("branch-"))
+				.branch((key, value) -> value.getAge() >= 34, Branched.as("greaterThan34"))
+				.branch((key, value) -> value.getAge() < 34, Branched.as("lessThan34"))
+				.noDefaultBranch();
 
-		// consumer = new KafkaStreams(builder.build(), props);
-		// consumer.start();
+		KStream<String, SimplePojoObject> kStreamGreaterThan24 = branchs.get("branch-greaterThan34");
+		KStream<String, SimplePojoObject> kStreamLessThan24 = branchs.get("branch-lessThan34");
+
+		kStreamGreaterThan24.join(kStreamLessThan24,
+				(left, right) -> new JoinedObjects(left, right),
+				JoinWindows.of(Duration.ofSeconds(60)),
+				StreamJoined.with(Serdes.String(), new CustomSerdes(), new CustomSerdes()))
+				.groupBy((k, v) -> k, Grouped.with(Serdes.String(), new CustomSerdesForJoinedObjects()))
+				.aggregate(
+						InitializerForAggregate::new,
+						(key, value, initializedVar) -> initializedVar.addNewData(key, value),
+						Materialized
+								.<String, InitializerForAggregate, KeyValueStore<Bytes, byte[]>>as(
+										"state-store-for-InitializerForAggregate")
+								.withKeySerde(Serdes.String())
+								.withValueSerde(new CustomSerDesForInitializerForAggregate()))
+				.toStream()
+				.print(Printed.<String, InitializerForAggregate>toSysOut().withLabel("Joins"));
+
+		consumer = new KafkaStreams(builder.build(), props);
+		consumer.start();
+
+		// this will throw an exception, because the state store is not
+		// initialized yet... take some time.
+		InitializerForAggregate object = (InitializerForAggregate) consumer.store(
+				StoreQueryParameters.fromNameAndType("state-store-for-InitializerForAggregate",
+						QueryableStoreTypes.keyValueStore()))
+				.get("random1");
+		logger.info("object: " + object.toString());
+
+		// ---------------------- 18 -----------------------
+		// ---> Custom TimeStamp extractor
+		// ---> tumbling Windows
+		StreamsBuilder builder = new StreamsBuilder();
+		KStream<String, SimplePojoObject> lines = builder.stream("stream-topic-custom-serdes",
+				Consumed.with(Serdes.String(), new SerDesForSimplePojoObject())
+						.withTimestampExtractor(new MessageTimestampExtractor())); // customtime-stamp extractor
+
+		Map<String, KStream<String, SimplePojoObject>> branchs = lines.split(Named.as("branch-"))
+				.branch((key, value) -> key.equals("random1") || key.equals("random2"),
+						Branched.as("keys1-2"))
+				.branch((key, value) -> key.equals("random3") || key.equals("random4"),
+						Branched.as("keys2-4"))
+				.noDefaultBranch();
+
+		KStream<String, SimplePojoObject> keys1t2 = branchs.get("branch-keys1-2");
+		KStream<String, SimplePojoObject> keys3t4 = branchs.get("branch-keys2-4");
+
+		keys1t2.groupByKey()
+				// tumbling window by 30 seconds and 10 seconds of grace.
+				.windowedBy(TimeWindows.ofSizeAndGrace(Duration.ofSeconds(30),
+						Duration.ofSeconds(10)))
+				.count(Materialized.as("1-2"))
+				.toStream()
+				.map((k, v) -> KeyValue.pair(k.key(), v))
+				.print(Printed.<String, Long>toSysOut().withLabel("keys1-2"));
+
+		consumer = new KafkaStreams(builder.build(), props);
+		consumer.start();
+
+		// ---------------------- 19 -----------------------
+		// ---> Custom TimeStamp extractor
+		// ---> hopping Windows
+		StreamsBuilder builder = new StreamsBuilder();
+		KStream<String, SimplePojoObject> lines = builder.stream("stream-topic-custom-serdes",
+				Consumed.with(Serdes.String(), new SerDesForSimplePojoObject())
+						.withTimestampExtractor(new MessageTimestampExtractor())); // customtime-stamp extractor
+
+		Map<String, KStream<String, SimplePojoObject>> branchs = lines.split(Named.as("branch-")) // if not set a name
+				.branch((key, value) -> key.equals("random1") || key.equals("random2"),
+						Branched.as("keys1-2"))
+				.branch((key, value) -> key.equals("random3") || key.equals("random4"),
+						Branched.as("keys2-4"))
+				.noDefaultBranch();
+
+		KStream<String, SimplePojoObject> keys1t2 = branchs.get("branch-keys1-2");
+		KStream<String, SimplePojoObject> keys3t4 = branchs.get("branch-keys2-4");
+
+		keys1t2.groupByKey()
+				// hopping window by 30 seconds and 10 seconds of grace.
+				.windowedBy(TimeWindows.ofSizeAndGrace(Duration.ofSeconds(30),
+						Duration.ofSeconds(10))
+						.advanceBy(Duration.ofSeconds(10)))
+				.count(Materialized.as("1-2"))
+				.toStream()
+				.print(Printed.<Windowed<String>, Long>toSysOut().withLabel("keys1-2"));
+
+		consumer = new KafkaStreams(builder.build(), props);
+		consumer.start();
+
+		// ---------------------- 20 -----------------------
+		// ---> Custom TimeStamp extractor
+		// ---> Session Windows
+		StreamsBuilder builder = new StreamsBuilder();
+		KStream<String, SimplePojoObject> lines = builder.stream("stream-topic-custom-serdes",
+				Consumed.with(Serdes.String(), new SerDesForSimplePojoObject())
+						.withTimestampExtractor(new MessageTimestampExtractor())); // customtime-stamp extractor
+
+		Map<String, KStream<String, SimplePojoObject>> branchs = lines.split(Named.as("branch-")) // if not set a name
+				.branch((key, value) -> key.equals("random1") || key.equals("random2"),
+						Branched.as("keys1-2"))
+				.branch((key, value) -> key.equals("random3") || key.equals("random4"),
+						Branched.as("keys2-4"))
+				.noDefaultBranch();
+
+		KStream<String, SimplePojoObject> keys1t2 = branchs.get("branch-keys1-2");
+		KStream<String, SimplePojoObject> keys3t4 = branchs.get("branch-keys2-4");
+
+		keys1t2.groupByKey()
+				// session window by 30 seconds and 10 seconds of grace.
+				// Session window only shows de results when production stops, in this stops for
+				// 10 seconds.
+				.windowedBy(SessionWindows.ofInactivityGapAndGrace(Duration.ofSeconds(5),
+						Duration.ofSeconds(10)))
+				.count(Materialized.as("1-2"))
+				.toStream()
+				.print(Printed.<Windowed<String>, Long>toSysOut().withLabel("keys1-2"));
+
+		consumer = new KafkaStreams(builder.build(), props);
+		consumer.start();
+
+		// ---------------------- 21 -----------------------
+		// ---> Custom TimeStamp extractor
+		// ---> Sliding window
+		StreamsBuilder builder = new StreamsBuilder();
+		KStream<String, SimplePojoObject> lines = builder.stream("stream-topic-custom-serdes",
+				Consumed.with(Serdes.String(), new SerDesForSimplePojoObject())
+						.withTimestampExtractor(new MessageTimestampExtractor())); // customtime-stamp extractor
+
+		Map<String, KStream<String, SimplePojoObject>> branchs = lines.split(Named.as("branch-")) // if not set a name
+				.branch((key, value) -> key.equals("random1") || key.equals("random2"),
+						Branched.as("keys1-2"))
+				.branch((key, value) -> key.equals("random3") || key.equals("random4"),
+						Branched.as("keys2-4"))
+				.noDefaultBranch();
+
+		KStream<String, SimplePojoObject> keys1t2 = branchs.get("branch-keys1-2");
+		KStream<String, SimplePojoObject> keys3t4 = branchs.get("branch-keys2-4");
+
+		keys1t2.groupByKey()
+				// Sliding of 10secontext
+				.windowedBy(SlidingWindows.ofTimeDifferenceAndGrace(Duration.ofSeconds(10),
+						Duration.ofSeconds(5)))
+				.count(Materialized.as("1-2-Sliding"))
+				.toStream()
+				.print(Printed.<Windowed<String>, Long>toSysOut().withLabel("keys1-2"));
+
+		consumer = new KafkaStreams(builder.build(), props);
+		consumer.start();
+
+		// ---------------------- 22 -----------------------
+		// ---> Custom TimeStamp extractor
+		// ---> TumbingWindows window
+		// ---> Supress Operator
+		StreamsBuilder builder = new StreamsBuilder();
+		KStream<String, SimplePojoObject> lines = builder.stream("stream-topic-custom-serdes",
+				Consumed.with(Serdes.String(), new SerDesForSimplePojoObject())
+						.withTimestampExtractor(new MessageTimestampExtractor())); // customtime-stamp extractor
+
+		Map<String, KStream<String, SimplePojoObject>> branchs = lines.split(Named.as("branch-")) // if not set a name
+				.branch((key, value) -> key.equals("random1") || key.equals("random2"),
+						Branched.as("keys1-2"))
+				.branch((key, value) -> key.equals("random3") || key.equals("random4"),
+						Branched.as("keys2-4"))
+				.noDefaultBranch();
+
+		KStream<String, SimplePojoObject> keys1t2 = branchs.get("branch-keys1-2");
+		KStream<String, SimplePojoObject> keys3t4 = branchs.get("branch-keys2-4");
+
+		keys1t2.groupByKey()
+				// TumbingWindows of 10secontext
+				.windowedBy(TimeWindows.ofSizeAndGrace(Duration.ofSeconds(10),
+						Duration.ofSeconds(5)))
+				.count(Materialized.as("1-2-TumbingWindows"))
+				// suppress operator, will hold the data until the windows time is reached.
+				.suppress(Suppressed.untilTimeLimit(Duration.ofSeconds(15),
+						BufferConfig.unbounded().emitEarlyWhenFull()))
+				.toStream()
+
+				.map((windowKey, value) -> KeyValue.pair(windowKey.key(), value))// rekey, because itens comes with
+																					// different key
+				.print(Printed.<String, Long>toSysOut().withLabel("keys1-2-TumbingWindows-supressed"));
+
+		consumer = new KafkaStreams(builder.build(), props);
+		consumer.start();
+
+		// ---------------------- 23 -----------------------
+		// ---> Supress Operator
+		StreamsBuilder builder = new StreamsBuilder();
+		KStream<String, SimplePojoObject> lines = builder.stream("stream-topic-custom-serdes",
+				Consumed.with(Serdes.String(), new SerDesForSimplePojoObject())
+						.withTimestampExtractor(new MessageTimestampExtractor()));
+
+		lines
+				.peek((k, v) -> logger.info("key= " + k + " value= " + v))
+				.groupByKey()
+				.count()
+				// suppress operator, will hold the data until the windows time is reached.
+				.suppress(
+						Suppressed.untilTimeLimit(Duration.ofMillis(5),
+								BufferConfig.unbounded().emitEarlyWhenFull()))
+				.toStream()
+				.map((windowKey, value) -> KeyValue.pair(windowKey, value))
+				.print(Printed.<String, Long>toSysOut().withLabel("keys1-2-TumbingWindows-supressed"));
+
+		consumer = new KafkaStreams(builder.build(), props);
+		consumer.start();
 
 		// --------------------- end --------------------------------
 

@@ -2,10 +2,11 @@ package com.davidosantos.kafka.training.kafkatraining;
 
 import java.util.Date;
 
-public class SimplePojoObject {
+public class SimplePojoObject implements MessageTimingInterface {
     private String name;
     private int age;
     private Date birthDate;
+    private String timestamp;
    
    
     // Getter Methods 
@@ -36,13 +37,29 @@ public class SimplePojoObject {
      this.birthDate = birthDate;
     }
 
+
     @Override
     public String toString() {
         return "{" +
             " name='" + getName() + "'" +
             ", age='" + getAge() + "'" +
             ", birthDate='" + getBirthDate() + "'" +
+            ", timestamp='" + getTimestamp() + "'" +
             "}";
+    }
+   
+
+    @Override
+    public String getMessageTiming() {
+        return getTimestamp();
+    }
+
+    public String getTimestamp() {
+        return this.timestamp;
+    }
+
+    public void setTimestamp(String timestamp) {
+        this.timestamp = timestamp;
     }
 
 
